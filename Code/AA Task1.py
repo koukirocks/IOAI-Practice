@@ -112,33 +112,34 @@ class PLWrapper(pl.LightningModule):
     self.log("test_acc",acc)
 
 def train_model(model_name, **kwarg):
+    model_folder = os.path.join(CHECKPOINT_PATH, model_name)
+    trainer = pl.Trainer(default_root_dir=model_folder,
+                         accelerator="gpu" if str(device) == "cuda" else "cpu",
+                         devices=1,
+                         max_epochs=180,
+                         callbacks=[ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_acc",
+                                                    dirpath=model_folder, filename=model_name),
+                                    LearningRateMonitor("epoch")],
+                         enable_progress_bar=True)
 
-  trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH,model_name),
-              accelerator="gpu" if str(device)=="cuda" else "cpu",
-              devices=1,
-              max_epochs=180,
-              callbacks=[ModelCheckpoint(save_weights_only=True,mode="max",monitor="val_acc",
-                                        dirpath=os.path.join(CHECKPOINT_PATH,model_name),filename=model_name),
-                    LearningRateMonitor("epoch")],
-              enable_progress_bar=True)
+    trainer.logger._log_graph = True
+    trainer.logger._default_hp_metric = True
 
-  trainer.logger._log_graph = True
-  trainer.logger._default_hp_metric = True
+    pretrained_filename = os.path.join(model_folder, model_name + ".ckpt")
+    print(f"Expected : {pretrained_filename}")
+    if os.path.isfile(pretrained_filename):
+        print("Found Trained model, loading ...")
+        model = PLWrapper.load_from_checkpoint(pretrained_filename)
+        print("Finished.")
+    else:
+        pl.seed_everything(177)
+        model = PLWrapper(model_name=model_name, **kwarg)
+        trainer.fit(model, train_loader, val_loader)
+        model = PLWrapper.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
 
-  pretrained_filename = os.path.join(CHECKPOINT_PATH,model_name+".ckpt")
-  if os.path.isfile(pretrained_filename):
-    print("Found Trained model, loading ...")
-    model = PLWrapper.load_from_checkpoint(pretrained_filename)
-    print("Finished.")
-  else:
-    pl.seed_everything(177)
-    model = PLWrapper(model_name=model_name,**kwarg)
-    trainer.fit(model,train_loader,val_loader)
-    model = PLWrapper.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    test_result = trainer.test(model,test_loader,verbose=False)
 
-  test_result = trainer.test(model,test_loader,verbose=False)
-
-  return model,test_result
+    return model,test_result
 
 model_dict["AA Task1"] = net
 
